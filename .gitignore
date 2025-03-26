@@ -1,0 +1,13 @@
+# Python 文件
+__pycache__/
+*.py[cod]
+*.so
+
+# 环境配置
+.env
+venv/
+*.log
+
+# 模型和数据文件
+/models/
+data/
