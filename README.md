@@ -1,5 +1,5 @@
-# LazyRAG-Miner
-LazyRAG-Miner 是一个在LazyLLM上集成了 MinerU 的 RAG 集成工具。
+# LazyRAG-Mineru
+LazyRAG-Mineru 是一个在LazyLLM上集成了 MinerU 的 RAG 集成工具。
 通过结合Mineru强大的pdf解析能力，提升知识提取与问答能力，协同解决复杂文件数据抽取与智能问答的瓶颈
 
 ## 📂 目录结构
