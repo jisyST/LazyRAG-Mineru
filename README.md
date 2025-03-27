@@ -1,13 +1,12 @@
-# LazyMiner
-LazyMiner 是一个结合 MinerU 和 LazyLLM 的 PDF 解析与 RAG 集成工具。
+# LazyRAG-Miner
+LazyRAG-Miner 是一个在LazyLLM上集成了 MinerU 的 RAG 集成工具。
+通过结合Mineru强大的pdf解析能力，提升知识提取与问答能力，协同解决复杂文件数据抽取与智能问答的瓶颈
 
 ## 📂 目录结构
-- **config/** – 配置文件  
-- **data/** – 示例 PDF 文件  
-- **models/** – 模型文件  
-- **scripts/** – 安装、下载脚本  
-- **src/** – 核心源代码  
-- **tests/** – 测试用例  
+- **data/** – 运行数据
+- **src/** – 核心源代码
+- **src/rag/** – rag服务启动入口
+ 
 
 ## 🚀 快速启动
 ```bash
@@ -15,5 +14,5 @@ LazyMiner 是一个结合 MinerU 和 LazyLLM 的 PDF 解析与 RAG 集成工具�
 pip install -r requirements.txt
 
 # 运行项目
-python src/main.py
+python src/rag/rag_mineru.py
 ```
