@@ -4,7 +4,7 @@ __pycache__/
 *.so
 
 # 环境配置
-.env
+# .env
 venv/
 *.log
 
