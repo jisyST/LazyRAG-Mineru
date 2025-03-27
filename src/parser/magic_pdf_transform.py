@@ -6,6 +6,11 @@ from typing import Union
 
 
 class MagicPDFTransform(NodeTransform):
+    """
+    专门用于magic-pdf解析结果的节点转换方法
+    可自定义节点转化方法
+    现根据章节标题和限定长度进行节点聚合
+    """
     def __init__(self, **kwargs):
         super().__init__()
 
@@ -16,81 +21,87 @@ class MagicPDFTransform(NodeTransform):
         nodes = ConsolidationTextNodeParser.parse_nodes(documents)
         for node in nodes:
             node.excluded_embed_metadata_keys = ['bbox', 'lines']
-            node.metadata = {'file_name': node.metadata['file_name']}
             node._group = node_group
         return nodes
 
 
 class ConsolidationTextNodeParser:
-    '''
-    遍历nodes, 将所有非title类型的节点合并
-    metadata中
-        有 text_level 字段的 为title
-        有 title 字段的 为正文
-    '''
+    """
+    遍历 nodes，将所有非 title 类型的节点合并。
+    
+    metadata:
+        - 有 text_level 字段的为 title
+        - 有 title 字段的为正文
+    """
 
     @classmethod
     def class_name(cls) -> str:
         return "ConsolidationTextNodeParser"
-    
+
     @staticmethod
-    def parse_nodes(
-        nodes: List[DocNode],
-        **kwargs: Any,
-    ) -> List[DocNode]:
-        def _merge(_result, _node):
-            '''合并算法部分'''
-            if not _result:
-                _result.append(_node)
-            elif _node.metadata.get("text_level", 0):
-                _result.append(_node)
+    def parse_nodes(nodes: List[DocNode], **kwargs: Any) -> List[DocNode]:
+        """
+        解析节点，合并非 title 类型的文本节点。
+        """
+        for node in nodes:
+            node._metadata['bbox'] = [{'page': node.metadata['page'], 'bbox': node.metadata['bbox']}]
+        grouped_nodes = ConsolidationTextNodeParser._group_nodes(nodes)
+        return [node for group in grouped_nodes for node in ConsolidationTextNodeParser._merge_text_nodes(group)]
+
+    @staticmethod
+    def _group_nodes(nodes: List["DocNode"]) -> List[List["DocNode"]]:
+        """
+        根据 text_level 进行分组，确保每组不会超过 4096 个字符。
+        """
+        grouped_nodes = []
+        current_group = []
+
+        for node in nodes:
+            if node.metadata.get("text_level", 0): 
+                if current_group:
+                    grouped_nodes.append(current_group)
+                current_group = [node]
+            elif len("\n\n".join(n._content for n in current_group + [node])) >= 4096:
+                grouped_nodes.append(current_group)
+                current_group = [node]
             else:
-                # if node.metadata['bbox'] == []: import pdb;pdb.set_trace()
-                _result[-1]._content = '\n\n'.join([_result[-1]._content, _node._content])
-                if _result[-1].metadata.get('bbox', None):
-                    _result[-1].metadata['bbox'] = ConsolidationTextNodeParser._merge_bbox(
-                        top_bbox=_result[-1].metadata['bbox'], bottom_bbox=_node.metadata['bbox']
-                    )
-                if _result[-1].metadata.get('lines', None):
-                    _result[-1].metadata['lines'].extend(_node.metadata['lines'])
+                current_group.append(node)
 
-            return _result
+        if current_group:
+            grouped_nodes.append(current_group)
 
-        def _merge_nodes(result, node):
-            # 判断是否合并的逻辑部分
-            if not result:
-                result.append([node])
-            elif node.metadata.get("text_level", 0):
-                # 长度判断规则后续按需调整优化
-                if len('\n\n'.join([i._content for i in result[-1]])) < 4096:
-                    result[-1] = functools.reduce(_merge, result[-1], [])
-                else:
-                    result = result[:-1] + [result[-1]]
-                result.append([node])
-            elif len('\n\n'.join([i._content for i in result[-1]] + [node._content])) >= 4096:
-                result[-1] = functools.reduce(_merge, result[-1], [])
-                result.append([node])
+        return grouped_nodes
+
+    @staticmethod
+    def _merge_text_nodes(nodes: List["DocNode"]) -> List["DocNode"]:
+        """
+        合并同一组中的文本节点，将内容和元数据合并到前一个节点中。
+        """
+        merged_nodes = []
+        for node in nodes:
+            if not merged_nodes:
+                merged_nodes.append(node)
             else:
-                result[-1].extend([node])
+                last_node = merged_nodes[-1]
+                last_node._content += f"\n\n{node._content}"
+                
+                if last_node.metadata.get("bbox"):
+                    last_node.metadata["bbox"].extend(node.metadata.get("bbox", []))
+                    # last_node.metadata["bbox"] = ConsolidationTextNodeParser._merge_bbox(
+                    #     last_node.metadata["bbox"], node.metadata.get("bbox", [])
+                    # )
+                
+                if last_node.metadata.get("lines"):
+                    last_node.metadata["lines"].extend(node.metadata.get("lines", []))
 
-            return result
+        return merged_nodes
 
-        _merged_nodes = functools.reduce(_merge_nodes, nodes, [])
-        # 处理最后一组结果
-        _merged_nodes[-1] = functools.reduce(_merge, _merged_nodes[-1], [])
-        return [node for nodes in _merged_nodes for node in nodes]
-    
     @staticmethod
     def _merge_bbox(top_bbox: List, bottom_bbox: List) -> List:
         """
         合并两个坐标框（bbox）。
-        约定 bbox 格式为: [left_top_x, left_top_y, right_bottom_x, right_bottom_y]
-
-        :param top_bbox: 上方 bbox
-        :param bottom_bbox: 下方 bbox
-        :return: 合并后的 bbox
+        bbox 格式: [left_top_x, left_top_y, right_bottom_x, right_bottom_y]
         """
-        # assert len(top_bbox) == 4 and len(bottom_bbox) == 4, f"每个 bbox 必须包含 4 个值\n top_bbox: {top_bbox}\n bottom_bbox: {bottom_bbox}"
         assert len(top_bbox) == 4, f"每个 bbox 必须包含 4 个值\n top_bbox: {top_bbox}"
         if len(bottom_bbox) != 4:
             bottom_bbox = top_bbox
@@ -111,7 +122,3 @@ class ConsolidationTextNodeParser:
             bottom_bbox[3],  # right_bottom_y
         ]
         return new_bbox
-
-
-
-

@@ -146,79 +146,124 @@ ocr_mkcontent.para_to_standard_format_v2 = para_to_standard_format_v2
 
 
 class MagicPDFReader:
+    """
+    PDF 文档解析器，支持文本、图片、表格的解析，返回结构化文档节点。
+    """
+
     def __init__(self):
         self.image_save_path = get_image_path()
-    
+
     def __call__(self, file: Path, split_documents: Optional[bool] = True, **kwargs) -> List[DocNode]:
         return self._load_data(file, split_documents)
-    
-    def _load_data(
-        self,
-        file: Path,
-        split_documents: Optional[bool] = True,
-        ) -> List[DocNode]:
-        """load data"""
-        elements = self._pdf_parse_to_elements(file)
+
+    def _load_data(self, file: Path, split_documents: Optional[bool] = True) -> List[DocNode]:
+        """
+        解析 PDF 并返回结构化文档节点。
+        """
+        elements = self._parse_pdf_elements(file)
         docs = []
-        
+
         if split_documents:
             for element in elements:
                 metadata = {"file_name": file.name}
-
-                for k, v in element.items():
-                    if k == "text":
-                        continue
-                    metadata[k] = v
-                docs.append(DocNode(text=element["text"] if "text" in element else "", metadata=metadata))
+                metadata.update({k: v for k, v in element.items() if k != "text"})
+                metadata.update({'file_path': str(file)})
+                docs.append(DocNode(text=element.get("text", ""), metadata=metadata))
         else:
-            metadata = {"file_name": file.name}
             text_chunks = [el["text"] for el in elements if "text" in el]
+            docs.append(DocNode(text="\n".join(text_chunks), metadata={"file_name": file.name}))
 
-            # Create a single document by joining all the texts
-            docs.append(DocNode(text="\n".join(text_chunks), metadata=metadata))
-        LOG.info(f"successfully return {os.path.basename(file)}")
+        LOG.info(f"Successfully parsed {file.name}")
         return docs
-    
-    def _pdf_parse_to_elements(self, pdf_path: Path):
-        # args
-        image_dir = str(os.path.basename(self.image_save_path))
 
+    def _parse_pdf_elements(self, pdf_path: Path) -> List[dict]:
+        """
+        解析 PDF 并返回文档元素（文本、表格、图片等）列表。
+        """
+        image_dir = os.path.basename(self.image_save_path)
         os.makedirs(self.image_save_path, exist_ok=True)
 
         image_writer = FileBasedDataWriter(self.image_save_path)
+        pdf_bytes = FileBasedDataReader("").read(pdf_path)
 
-        # read bytes
-        reader1 = FileBasedDataReader("")
-        pdf_bytes = reader1.read(pdf_path)  # read the pdf content
-
-        # proc
-        # Create Dataset Instance
         ds = PymuDocDataset(pdf_bytes)
 
-        # inference
         if ds.classify() == SupportedPdfParseMethod.OCR:
             infer_result = ds.apply(doc_analyze, ocr=True)
             pipe_result = infer_result.pipe_ocr_mode(image_writer)
-
         else:
             infer_result = ds.apply(doc_analyze, ocr=False)
-
             pipe_result = infer_result.pipe_txt_mode(image_writer)
 
         infer_result.get_infer_res()
+        return self._extract_content_blocks(pipe_result.get_content_list(image_dir))
 
-        content_list_content = pipe_result.get_content_list(image_dir)
-        return self._result_extract(content_list_content)
-    
-    def _clean_content(self, content):
+    def _extract_content_blocks(self, content_list) -> List[dict]:
+        """
+        处理解析结果，提取文本、表格、图片等内容。
+        """
+        blocks = []
+        cur_title = ""
+        cur_level = -1
+        for content in content_list:
+            block = {}
+            block["bbox"] = content["bbox"]
+            block["lines"] = content["lines"] if 'lines' in content else []
+            for line in block['lines']:
+                line['content'] = self._clean_content(line['content'])
+            if content["type"] == "text":
+                content["text"] = self._clean_content(content["text"]).strip()
+                if not content["text"]:
+                    continue
+                if "text_level" in content:
+                    if cur_title and content["text_level"] > cur_level:
+                        content["title"] = cur_title
+                    cur_title = content["text"]
+                    cur_level = content["text_level"]
+                else:
+                    if cur_title:
+                        content["title"] = cur_title
+                block = copy.deepcopy(content)
+                block["page"] = content["page_idx"]
+                del block["page_idx"]
+                blocks.append(block)
+            elif content["type"] == "image":
+                if not content["img_path"]:
+                    continue
+                block["type"] = content["type"]
+                block["page"] = content["page_idx"]
+                block["image_path"] = os.path.basename(content["img_path"])
+                block['img_caption'] = self._clean_content(content['img_caption'])
+                block['img_footnote'] = self._clean_content(content['img_footnote'])
+                if cur_title:
+                    block["title"] = cur_title
+                blocks.append(block)
+            elif content["type"] == "table":
+                block["type"] = content["type"]
+                block["page"] = content["page_idx"]
+                block["text"] = self._html_table_to_markdown(self._clean_content(content["table_body"])) if "table_body" in content else ""
+                if cur_title:
+                    block["title"] = cur_title
+                block['table_caption'] = self._clean_content(content['table_caption'])
+                block['table_footnote'] = self._clean_content(content['table_footnote'])
+                blocks.append(block)
+        return blocks
+
+    def _clean_content(self, content) -> str:
+        """
+        清理文本内容，处理编码问题并进行 Unicode 归一化。
+        """
         if isinstance(content, str):
-            content = content.encode('utf-8', 'replace').decode('utf-8')
+            content = content.encode("utf-8", "replace").decode("utf-8")
             return unicodedata.normalize("NFKC", content)
         if isinstance(content, list):
             return [self._clean_content(t) for t in content]
         return content
-    
-    def _html_table_to_markdown(self, html_table):
+
+    def _html_table_to_markdown(self, html_table) -> str:
+        """
+        将 HTML 表格转换为 Markdown 格式。
+        """
         try:
             soup = BeautifulSoup(html_table.strip(), 'html.parser')
             table = soup.find('table')
@@ -281,54 +326,6 @@ class MagicPDFReader:
         except Exception as e:
             print(f"Error parsing table: {e}")
             return ''
-    
-    def _result_extract(self, content_list):
-        blocks = []
-        cur_title = ""
-        cur_level = -1
-        for content in content_list:
-            block = {}
-            block["bbox"] = content["bbox"]
-            block["lines"] = content["lines"] if 'lines' in content else []
-            for line in block['lines']:
-                line['content'] = self._clean_content(line['content'])
-            if content["type"] == "text":
-                content["text"] = self._clean_content(content["text"]).strip()
-                if not content["text"]:
-                    continue
-                if "text_level" in content:
-                    if cur_title and content["text_level"] > cur_level:
-                        content["title"] = cur_title
-                    cur_title = content["text"]
-                    cur_level = content["text_level"]
-                else:
-                    if cur_title:
-                        content["title"] = cur_title
-                block = copy.deepcopy(content)
-                block["page"] = content["page_idx"]
-                del block["page_idx"]
-                blocks.append(block)
-            elif content["type"] == "image":
-                if not content["img_path"]:
-                    continue
-                block["type"] = content["type"]
-                block["page"] = content["page_idx"]
-                block["image_path"] = os.path.basename(content["img_path"])
-                block['img_caption'] = self._clean_content(content['img_caption'])
-                block['img_footnote'] = self._clean_content(content['img_footnote'])
-                if cur_title:
-                    block["title"] = cur_title
-                blocks.append(block)
-            elif content["type"] == "table":
-                block["type"] = content["type"]
-                block["page"] = content["page_idx"]
-                block["text"] = self._html_table_to_markdown(self._clean_content(content["table_body"])) if "table_body" in content else ""
-                if cur_title:
-                    block["title"] = cur_title
-                block['table_caption'] = self._clean_content(content['table_caption'])
-                block['table_footnote'] = self._clean_content(content['table_footnote'])
-                blocks.append(block)
-        return blocks
     
 
 
