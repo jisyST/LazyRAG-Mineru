@@ -27,7 +27,7 @@ def draw_bboxes_on_pdf(input_pdf_path, bbox_list, output_pdf_path, query):
                 rect = fitz.Rect(*bbox['bbox'])  # 创建矩形框
                 page.draw_rect(rect, color=(1, 0, 0), width=2)  # 绘制红色矩形框
 
-    # 保存带有框框的PDF文档
+    # 保存带有bbox的PDF文档
     pdf_document.save(output_pdf_path)
     pdf_document.close()
 

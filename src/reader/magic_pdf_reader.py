@@ -332,7 +332,7 @@ class MagicPDFReader:
 if __name__ == "__main__":
     import json
     reader = MagicPDFReader()
-    file = Path("/home/mnt/jisiyuan/projects/LazyRAG-Mineru/data/test11/珀莱雅.pdf")
+    file = Path("")
     nodes = reader._load_data(file)
 
     # jsons = []
@@ -349,5 +349,5 @@ if __name__ == "__main__":
         #     del metadata['bbox']
         jsons.append({'text': node.text} | metadata)
 
-    with open("/home/mnt/jisiyuan/projects/LazyRAG-Mineru/data/parse_res/珀莱雅_magic_pdf.json", "w", encoding="utf-8") as f:
+    with open("", "w", encoding="utf-8") as f:
         json.dump(jsons, f, ensure_ascii=False, indent=4)

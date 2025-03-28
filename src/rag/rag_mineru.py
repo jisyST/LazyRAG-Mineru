@@ -13,15 +13,15 @@ load_dotenv()
 
 prompt = 'You will play the role of an AI question-answering assistant and complete a conversation task in which you need to provide your answer based on the given context and question. Please note that if the given context cannot answer the question, do not use your prior knowledge but tell the user that the given context cannot answer the question.'
 
-documents = Document(dataset_path="/home/mnt/jisiyuan/projects/LazyRAG-Mineru/data/金融知识库", embed=OnlineEmbeddingModule(), manager=False)
+documents = Document(dataset_path="", embed=OnlineEmbeddingModule(), manager=False)
 
 documents.add_reader("**/*.pdf", MagicPDFReader)
 documents.create_node_group(name="magic-pdf", transform=MagicPDFTransform) 
 
 with pipeline() as ppl:
     with parallel().sum as ppl.prl:
-        prl.retriever1 = Retriever(documents, group_name="magic-pdf", embed_keys=["dense"], similarity="cosine", topk=3)
-        prl.retriever2 = Retriever(documents, group_name="magic-pdf",  embed_keys=["sparse"], similarity="bm25_chinese", topk=3)
+        prl.retriever1 = Retriever(documents, group_name="magic-pdf", similarity="cosine", topk=3)
+        prl.retriever2 = Retriever(documents, group_name="magic-pdf",  similarity="bm25_chinese", topk=3)
     ppl.reranker = Reranker("ModuleReranker", model=OnlineEmbeddingModule(type="rerank"), topk=1, output_format='content', join=True) | bind(query=ppl.input)
     ppl.formatter = (lambda nodes, query: dict(context_str=nodes, query=query)) | bind(query=ppl.input)
     ppl.llm = lazyllm.OnlineChatModule(stream=False).prompt(lazyllm.ChatPrompter(prompt, extro_keys=["context_str"]))

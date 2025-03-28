@@ -10,7 +10,7 @@ load_dotenv()
 
 prompt = 'You will play the role of an AI question-answering assistant and complete a conversation task in which you need to provide your answer based on the given context and question. Please note that if the given context cannot answer the question, do not use your prior knowledge but tell the user that the given context cannot answer the question.'
 
-documents = Document(dataset_path="/home/mnt/jisiyuan/projects/LazyRAG-Mineru/data/金融知识库", embed=OnlineEmbeddingModule(), manager=False)
+documents = Document(dataset_path="", embed=OnlineEmbeddingModule(), manager=False)
 documents.create_node_group(name="sentences", transform=SentenceSplitter, chunk_size=1024, chunk_overlap=100)
 
 
