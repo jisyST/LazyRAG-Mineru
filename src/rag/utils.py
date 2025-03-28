@@ -30,7 +30,7 @@ def draw_bboxes_on_pdf(input_pdf_path, bbox_list, output_pdf_path, query):
     # 保存带有bbox的PDF文档
     pdf_document.save(output_pdf_path)
     pdf_document.close()
-
+ 
 
 def get_project_path():
     current_path = Path(__file__).resolve()
@@ -41,12 +41,12 @@ def get_project_path():
 
 
 def get_pdf_output_path():
-    path = os.path.join(get_project_path(), "draw_box_pdf")
+    path = os.path.join(get_project_path(), "data/draw_box_pdf")
     os.makedirs(path, exist_ok=True)
     return path
 
 
 def get_image_path():
-    path = os.path.join(get_project_path(), "images")
+    path = os.path.join(get_project_path(), "data/images")
     os.makedirs(path, exist_ok=True)
     return path
